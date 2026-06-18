@@ -1,0 +1,18 @@
+{
+  "products": [
+    {
+      "id": "1",
+      "sku": "100",
+      "name": "Copper 1/2 MPCL",
+      "category": "COPPER",
+      "brand": "SMART COOL CARE",
+      "price": 480,
+      "stock": 250,
+      "description": "Genuine copper pipe for AC installations.",
+      "compatibility": "Universal split AC",
+      "image_url": ""
+    }
+  ],
+  "orders": [],
+  "leads": []
+}
