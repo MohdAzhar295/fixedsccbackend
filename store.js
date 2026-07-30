@@ -1,5 +1,9 @@
 /**
- * Data access layer — MongoDB-backed store with the same API surface as the old file store.
+ * store.js — Production data layer (MongoDB via Mongoose)
+ *
+ * WHAT:  All database reads/writes — products, orders, leads, shop categories, stats.
+ * WHY:   server.js never talks to models directly; this file is the single data API.
+ * PAIR:  jsonStore.js mirrors the same function names for local dev without MongoDB.
  */
 const Product = require("./models/Product");
 const Order = require("./models/Order");
@@ -7,10 +11,39 @@ const Lead = require("./models/Lead");
 const ShopCategory = require("./models/ShopCategory");
 const { seedIfEmpty } = require("./seedData");
 
+function resolveProductImages(p) {
+  const urls = Array.isArray(p.image_urls)
+    ? p.image_urls.filter((u) => u && String(u).trim()).slice(0, 5)
+    : [];
+  if (urls.length === 0 && p.image_url) {
+    urls.push(String(p.image_url).trim());
+  }
+  return {
+    image_urls: urls,
+    image_url: urls[0] || "",
+  };
+}
+
+function parseProductImageInput(input) {
+  if (Array.isArray(input.image_urls)) {
+    const urls = input.image_urls
+      .map((u) => String(u ?? "").trim())
+      .filter(Boolean)
+      .slice(0, 5);
+    return { image_urls: urls, image_url: urls[0] || "" };
+  }
+  if (input.image_url !== undefined) {
+    const url = String(input.image_url ?? "").trim();
+    return { image_urls: url ? [url] : [], image_url: url };
+  }
+  return null;
+}
+
 /** Normalize a product document for API responses. */
 function normalizeProduct(doc) {
   const p = doc.toObject ? doc.toObject() : doc;
   const stock = Number(p.stock ?? 0);
+  const images = resolveProductImages(p);
   return {
     id: String(p.legacyId || p._id),
     name: p.name || "",
@@ -20,7 +53,8 @@ function normalizeProduct(doc) {
     brand: p.brand || "",
     description: p.description || "",
     compatibility: p.compatibility || "",
-    image_url: p.image_url || "",
+    image_url: images.image_url,
+    image_urls: images.image_urls,
     stock,
     inventory: stock,
     in_stock: stock > 0,
@@ -120,7 +154,7 @@ async function createProduct(input) {
     stock: Number(input.stock) || 0,
     description: input.description || "",
     compatibility: input.compatibility || "",
-    image_url: input.image_url || "",
+    ...parseProductImageInput(input) || { image_url: "", image_urls: [] },
   });
 
   return normalizeProduct(product);
@@ -138,7 +172,11 @@ async function updateProduct(id, input) {
   if (input.stock !== undefined) product.stock = Number(input.stock);
   if (input.description !== undefined) product.description = input.description;
   if (input.compatibility !== undefined) product.compatibility = input.compatibility;
-  if (input.image_url !== undefined) product.image_url = input.image_url;
+  const images = parseProductImageInput(input);
+  if (images) {
+    product.image_url = images.image_url;
+    product.image_urls = images.image_urls;
+  }
 
   await product.save();
   return normalizeProduct(product);
