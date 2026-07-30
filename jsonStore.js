@@ -1,5 +1,9 @@
 /**
- * File-based store for local dev when USE_JSON_STORE=1 (no MongoDB required).
+ * jsonStore.js — Local dev data layer (JSON file, no MongoDB)
+ *
+ * WHAT:  Same functions as store.js but reads/writes local-db.json on disk.
+ * WHEN:  server.js loads this if env USE_JSON_STORE=1 (never set on Render).
+ * SETUP: Run `npm run local:setup` first to create local-db.json.
  */
 const fs = require("fs");
 const path = require("path");
@@ -22,8 +26,37 @@ function newId() {
   return String(Date.now()) + randomBytes(2).toString("hex");
 }
 
+function resolveProductImages(p) {
+  const urls = Array.isArray(p.image_urls)
+    ? p.image_urls.filter((u) => u && String(u).trim()).slice(0, 5)
+    : [];
+  if (urls.length === 0 && p.image_url) {
+    urls.push(String(p.image_url).trim());
+  }
+  return {
+    image_urls: urls,
+    image_url: urls[0] || "",
+  };
+}
+
+function parseProductImageInput(input) {
+  if (Array.isArray(input.image_urls)) {
+    const urls = input.image_urls
+      .map((u) => String(u ?? "").trim())
+      .filter(Boolean)
+      .slice(0, 5);
+    return { image_urls: urls, image_url: urls[0] || "" };
+  }
+  if (input.image_url !== undefined) {
+    const url = String(input.image_url ?? "").trim();
+    return { image_urls: url ? [url] : [], image_url: url };
+  }
+  return null;
+}
+
 function normalizeProduct(p) {
   const stock = Number(p.stock ?? 0);
+  const images = resolveProductImages(p);
   return {
     id: String(p.legacyId || p._id),
     name: p.name || "",
@@ -33,7 +66,8 @@ function normalizeProduct(p) {
     brand: p.brand || "",
     description: p.description || "",
     compatibility: p.compatibility || "",
-    image_url: p.image_url || "",
+    image_url: images.image_url,
+    image_urls: images.image_urls,
     stock,
     inventory: stock,
     in_stock: stock > 0,
@@ -127,7 +161,7 @@ async function createProduct(input) {
     stock: Number(input.stock) || 0,
     description: input.description || "",
     compatibility: input.compatibility || "",
-    image_url: input.image_url || "",
+    ...parseProductImageInput(input) || { image_url: "", image_urls: [] },
   };
   db.products.unshift(product);
   save(db);
@@ -147,7 +181,7 @@ async function updateProduct(id, input) {
     ...(input.stock !== undefined && { stock: Number(input.stock) }),
     ...(input.description !== undefined && { description: input.description }),
     ...(input.compatibility !== undefined && { compatibility: input.compatibility }),
-    ...(input.image_url !== undefined && { image_url: input.image_url }),
+    ...(parseProductImageInput(input) || {}),
   });
   save(db);
   return normalizeProduct(product);
@@ -320,3 +354,4 @@ module.exports = {
   updateShopCategory,
   deleteShopCategory,
 };
+
